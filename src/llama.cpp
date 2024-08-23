@@ -8885,7 +8885,7 @@ static struct ggml_tensor * llm_build_kqv(
         struct ggml_tensor * kq = ggml_mul_mat(ctx, k, q);
         cb(kq, "kq", il);
 
-	// Using F32 as the default KQ multiplication can solve many models’ output of NaNs
+	// Using F32 by default for KQ multiplication can solve many models’ output of NaNs
         // ref: https://github.com/ggerganov/llama.cpp/pull/4490#issuecomment-1859055847, https://github.com/ggerganov/llama.cpp/pull/9130#pullrequestreview-2256552459
         ggml_mul_mat_set_prec(kq, GGML_PREC_F32);
 
