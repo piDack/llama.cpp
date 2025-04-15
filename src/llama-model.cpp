@@ -1204,6 +1204,7 @@ void llama_model::load_hparams(llama_model_loader & ml) {
                             type = LLM_TYPE_9B;
                         }
                     } break;
+                    case 61: type = LLM_TYPE_32B; break;
                     default: type = LLM_TYPE_UNKNOWN;
                 }
             } break;
@@ -3475,7 +3476,7 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                     // output
                     output_norm   = create_tensor(tn(LLM_TENSOR_OUTPUT_NORM, "weight"), {n_embd}, 0);
                     output        = create_tensor(tn(LLM_TENSOR_OUTPUT,      "weight"), {n_embd, n_vocab}, 0);
-
+                    // if output is NULL, init from the input tok embed
                     for (int i = 0; i < n_layer; ++i) {
                         auto & layer = layers[i];
 
@@ -3494,11 +3495,15 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
 
                         layer.wo   = create_tensor(tn(LLM_TENSOR_ATTN_OUT, "weight", i), {n_embd, n_embd}, 0);
 
+                        layer.attn_post_norm = create_tensor(tn(LLM_TENSOR_ATTN_POST_NORM, "weight", i), {n_embd}, TENSOR_NOT_REQUIRED);
+
                         layer.ffn_norm   = create_tensor(tn(LLM_TENSOR_FFN_NORM, "weight", i), {n_embd}, 0);
 
                         layer.ffn_up     = create_tensor(tn(LLM_TENSOR_FFN_UP,   "weight", i), {n_embd, n_ff * 2}, 0);
 
                         layer.ffn_down   = create_tensor(tn(LLM_TENSOR_FFN_DOWN, "weight", i), {n_ff, n_embd}, 0);
+
+                        layer.ffn_post_norm  = create_tensor(tn(LLM_TENSOR_FFN_POST_NORM, "weight", i), {n_embd}, 0);
                     }
                 } break;
             case LLM_ARCH_GLM4:
@@ -10911,12 +10916,22 @@ struct llm_build_chatglm : public llm_graph_context {
                 inpSA = ggml_get_rows(ctx0, inpSA, inp_out_ids);
             }
 
+            // Post-attention norm (new!)
+            if (model.layers[il].attn_post_norm){
+                cur = build_norm(cur,
+                        model.layers[il].attn_post_norm,
+                        NULL,
+                        LLM_NORM_RMS, il);
+                cb(cur, "post_attn_norm", il);
+            }
+
             // Add the input
             ggml_tensor * ffn_inp = ggml_add(ctx0, cur, inpSA);
             cb(ffn_inp, "ffn_inp", il);
 
             // FF
             {
+                // Pre-MLP norm
                 cur = build_norm(ffn_inp,
                         model.layers[il].ffn_norm,
                         NULL,
@@ -10931,6 +10946,14 @@ struct llm_build_chatglm : public llm_graph_context {
                         LLM_FFN_SWIGLU, LLM_FFN_SEQ, il);
                 cb(cur, "ffn_out", il);
 
+                // Post-MLP norm
+                if(model.layers[il].ffn_post_norm){
+                    cur = build_norm(cur,
+                            model.layers[il].ffn_post_norm,
+                            NULL,
+                            LLM_NORM_RMS, il);
+                    cb(cur, "post_mlp_norm", il);
+                }
             }
 
             inpL = ggml_add(ctx0, cur, ffn_inp);
