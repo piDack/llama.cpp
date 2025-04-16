@@ -5049,6 +5049,10 @@ class ChatGLMModel(Model):
         special_vocab._set_special_token("eot", tokenizer.get_added_vocab()["<|user|>"])
         # this one is usually not in config.json anyway
         special_vocab._set_special_token("unk", tokenizer.get_added_vocab()["<|endoftext|>"])
+        # exclude glm-edge 1.5B & 4B
+        if self.hparams.get("partial_rotary_factor", 1.0) == 0.5:
+            print("add bos in model")
+            special_vocab._set_special_token("bos", tokenizer.get_added_vocab()["[gMASK]"])
         special_vocab.add_to_gguf(self.gguf_writer)
 
     def set_gguf_parameters(self):
