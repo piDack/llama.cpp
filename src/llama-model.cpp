@@ -10868,7 +10868,7 @@ struct llm_build_chatglm : public llm_graph_context {
                 inpSA = ggml_get_rows(ctx0, inpSA, inp_out_ids);
             }
 
-            // Post-attention norm (new!)
+            // Post-attention norm (Glm4-Z)
             if (model.layers[il].attn_post_norm){
                 cur = build_norm(cur,
                         model.layers[il].attn_post_norm,

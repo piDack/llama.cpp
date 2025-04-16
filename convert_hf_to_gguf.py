@@ -281,8 +281,10 @@ class Model:
         return [(self.map_tensor_name(name), data_torch)]
 
     def tensor_force_quant(self, name: str, new_name: str, bid: int | None, n_dims: int) -> gguf.GGMLQuantizationType | bool:
+        # 删除未使用的参数，避免警告或错误
         del name, new_name, bid, n_dims  # unused
 
+        # 返回False，表示不进行量化
         return False
 
     # some models need extra generated tensors (like rope_freqs)
@@ -5053,7 +5055,10 @@ class ChatGLMModel(Model):
         n_embed = self.hparams.get("hidden_size", self.hparams.get("n_embed"))
         n_head = self.hparams.get("n_head", self.hparams.get("num_attention_heads"))
         n_head_kv = self.hparams.get("multi_query_group_num", self.hparams.get("num_key_value_heads", n_head))
-        self.gguf_writer.add_context_length(self.hparams.get("seq_length", n_embed))
+        if (n_ctx := self.find_hparam(["max_position_embeddings", "n_ctx", "seq_length"], optional=True)) is not None:
+            self.gguf_writer.add_context_length(n_ctx)
+        else:
+            self.gguf_writer.add_context_length(n_embed)
         self.gguf_writer.add_embedding_length(n_embed)
         self.gguf_writer.add_feed_forward_length(self.hparams.get("ffn_hidden_size", self.hparams.get("intermediate_size", 4 * n_embed)))
         self.gguf_writer.add_block_count(self.hparams.get("num_layers", self.hparams["num_hidden_layers"]))
@@ -5061,6 +5066,7 @@ class ChatGLMModel(Model):
         self.gguf_writer.add_head_count_kv(n_head_kv)
         self.gguf_writer.add_layer_norm_rms_eps(self.hparams.get("layernorm_epsilon",1e-5))
         self.gguf_writer.add_file_type(self.ftype)
+        self.gguf_writer.set_gguf_parameters(self)
         if "attention_dim" in self.hparams:
             rope_dim = self.hparams["attention_dim"]
         else:
