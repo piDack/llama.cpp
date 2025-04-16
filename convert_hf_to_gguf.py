@@ -5066,7 +5066,6 @@ class ChatGLMModel(Model):
         self.gguf_writer.add_head_count_kv(n_head_kv)
         self.gguf_writer.add_layer_norm_rms_eps(self.hparams.get("layernorm_epsilon",1e-5))
         self.gguf_writer.add_file_type(self.ftype)
-        self.gguf_writer.set_gguf_parameters(self)
         if "attention_dim" in self.hparams:
             rope_dim = self.hparams["attention_dim"]
         else:
