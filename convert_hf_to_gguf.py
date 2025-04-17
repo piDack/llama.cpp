@@ -5049,6 +5049,7 @@ class ChatGLMModel(Model):
         special_vocab._set_special_token("unk", tokenizer.get_added_vocab()["<|endoftext|>"])
         # exclude glm-edge 1.5B & 4B
         if self.hparams.get("partial_rotary_factor", 1.0) == 0.5:
+            # GLM4 model has no bos token set in its tokenizer config, set it manually to [gMASK]
             special_vocab._set_special_token("bos", tokenizer.get_added_vocab()["[gMASK]"])
         special_vocab.add_to_gguf(self.gguf_writer)
 
