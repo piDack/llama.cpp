@@ -3467,7 +3467,6 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                     // output
                     output_norm   = create_tensor(tn(LLM_TENSOR_OUTPUT_NORM, "weight"), {n_embd}, 0);
                     output        = create_tensor(tn(LLM_TENSOR_OUTPUT,      "weight"), {n_embd, n_vocab}, 0);
-                    // if output is NULL, init from the input tok embed
                     for (int i = 0; i < n_layer; ++i) {
                         auto & layer = layers[i];
 
@@ -3494,7 +3493,7 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
 
                         layer.ffn_down   = create_tensor(tn(LLM_TENSOR_FFN_DOWN, "weight", i), {n_ff, n_embd}, 0);
 
-                        layer.ffn_post_norm  = create_tensor(tn(LLM_TENSOR_FFN_POST_NORM, "weight", i), {n_embd}, 0);
+                        layer.ffn_post_norm  = create_tensor(tn(LLM_TENSOR_FFN_POST_NORM, "weight", i), {n_embd}, TENSOR_NOT_REQUIRED);
                     }
                 } break;
             case LLM_ARCH_NEMOTRON:

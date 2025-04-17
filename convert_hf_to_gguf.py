@@ -281,10 +281,8 @@ class Model:
         return [(self.map_tensor_name(name), data_torch)]
 
     def tensor_force_quant(self, name: str, new_name: str, bid: int | None, n_dims: int) -> gguf.GGMLQuantizationType | bool:
-        # 删除未使用的参数，避免警告或错误
         del name, new_name, bid, n_dims  # unused
 
-        # 返回False，表示不进行量化
         return False
 
     # some models need extra generated tensors (like rope_freqs)
@@ -5051,7 +5049,6 @@ class ChatGLMModel(Model):
         special_vocab._set_special_token("unk", tokenizer.get_added_vocab()["<|endoftext|>"])
         # exclude glm-edge 1.5B & 4B
         if self.hparams.get("partial_rotary_factor", 1.0) == 0.5:
-            print("add bos in model")
             special_vocab._set_special_token("bos", tokenizer.get_added_vocab()["[gMASK]"])
         special_vocab.add_to_gguf(self.gguf_writer)
 
