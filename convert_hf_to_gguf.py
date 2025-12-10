@@ -9069,6 +9069,7 @@ class GlmASRWhisperEncoderModel(MmprojModel):
 
         return [(self.map_tensor_name(name), data_torch)]
 
+
 @ModelBase.register("Qwen2AudioForConditionalGeneration")
 class WhisperEncoderModel(MmprojModel):
     has_vision_encoder = False # no vision encoder
