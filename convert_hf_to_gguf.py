@@ -2411,7 +2411,6 @@ class LlamaModel(TextModel):
         # Apply to granite small models only
         if self.hparams.get("vocab_size", 32000) == 49152:
             self.gguf_writer.add_add_bos_token(False)
-        
         if isinstance(self.hparams.get("eos_token_id"), list):
             from transformers import AutoTokenizer
             tokenizer = AutoTokenizer.from_pretrained(self.dir_model, trust_remote_code=True)
@@ -9014,6 +9013,7 @@ class UltravoxModel(TextModel):
         super().__init__(*args, **kwargs)
         raise NotImplementedError("Ultravox does not have text decoder. Instead, it uses Llama or other models for text. If you want to get the audio encoder, please use --mmproj argument")
 
+
 @ModelBase.register("GlmasrModel")
 class GlmASRWhisperEncoderModel(MmprojModel):
     has_vision_encoder = False
@@ -9025,7 +9025,7 @@ class GlmASRWhisperEncoderModel(MmprojModel):
             self.hparams["hidden_size"] = self.hparams["d_model"]
             self.hparams["intermediate_size"] = self.hparams["encoder_ffn_dim"]
             self.hparams["num_attention_heads"] = self.hparams["encoder_attention_heads"]
-    
+
     def set_gguf_parameters(self):
         super().set_gguf_parameters()
         self.gguf_writer.add_clip_projector_type(gguf.VisionProjectorType.GLMA)
@@ -9043,12 +9043,12 @@ class GlmASRWhisperEncoderModel(MmprojModel):
         if name.startswith("model.") or name.startswith("lm_head."):
             # skip language model tensors
             return []
-        
+
         if name.startswith("audio_encoder.whisper."):
             name = name.replace("audio_encoder.whisper.","audio_tower.")
         if "audio_encoder.layer_norm." in name or "audio_encoder.proj." in name:
             name = name.replace("audio_encoder.", "audio_encoder.adapting.")
-        
+
         if name.startswith("audio_encoder.audio_bos_eos_token."):
             return [(self.map_tensor_name("model.vision.boi"), data_torch[0]), (self.map_tensor_name("model.vision.eoi"), data_torch[1])]
 
@@ -9061,7 +9061,6 @@ class GlmASRWhisperEncoderModel(MmprojModel):
             if ".2." in name:
                 name = name.replace(".2.", ".linear_2.")
             if ".proj." in name:
-                print("skip proj")
                 return []
 
         if "conv1.bias" in name or "conv2.bias" in name:
