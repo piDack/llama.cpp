@@ -388,6 +388,7 @@ struct clip_model {
     ggml_tensor * conv1d_2_w = nullptr;
     ggml_tensor * conv1d_2_b = nullptr;
     ggml_tensor * mm_norm_pre_w = nullptr;
+    ggml_tensor * mm_norm_pre_b = nullptr;
     ggml_tensor * mm_norm_mid_w = nullptr;
 
     // cogvlm
@@ -1829,7 +1830,6 @@ struct clip_graph {
         GGML_ASSERT(model.layers[0].q_b);
         GGML_ASSERT(model.layers[0].v_b);
         GGML_ASSERT(!model.layers[0].k_b); // no bias for k
-        GGML_ASSERT(model.post_ln_w && model.post_ln_b);
 
         ggml_tensor * pos_embd_selected = ggml_view_2d(
             ctx0, model.position_embeddings,
@@ -1891,6 +1891,18 @@ struct clip_graph {
             cur = ggml_gelu_erf(ctx0, cur);
             cur = ggml_mul_mat(ctx0, model.mm_2_w, cur);
 
+        } else if (ctx->proj_type() == PROJECTOR_TYPE_GLMA) {
+            cur = ggml_norm(ctx0, cur, hparams.eps);
+            cur = ggml_mul(ctx0, cur, model.mm_norm_pre_w);
+            cur = ggml_add(ctx0, cur, model.mm_norm_pre_b);
+            cur = ggml_reshape_2d(ctx0, cur, cur->ne[0] * 4, cur->ne[1] / 4);
+            cur = ggml_mul_mat(ctx0, model.mm_1_w, cur);
+            cur = ggml_add(ctx0, cur, model.mm_1_b);
+            cur = ggml_gelu_erf(ctx0, cur);
+            cur = ggml_mul_mat(ctx0, model.mm_2_w, cur);
+            cur = ggml_add(ctx0, cur, model.mm_2_b);
+            cur = ggml_concat(ctx0, model.mm_boi, cur, 1);
+            cur = ggml_concat(ctx0, cur, model.mm_eoi, 1);
         } else {
             GGML_ABORT("%s: unknown projector type", __func__);
         }
@@ -2518,6 +2530,7 @@ static ggml_cgraph * clip_image_build_graph(clip_ctx * ctx, const clip_image_f32
         case PROJECTOR_TYPE_ULTRAVOX:
         case PROJECTOR_TYPE_VOXTRAL:
         case PROJECTOR_TYPE_QWEN2A:
+        case PROJECTOR_TYPE_GLMA:
             {
                 res = graph.build_whisper_enc();
             } break;
@@ -3224,6 +3237,21 @@ struct clip_model_loader {
                     model.mm_1_b = get_tensor(string_format(TN_MVLM_PROJ_MLP, 1, "bias"));
                     model.mm_3_w = get_tensor(string_format(TN_MVLM_PROJ_MLP, 3, "weight"));
                     model.mm_3_b = get_tensor(string_format(TN_MVLM_PROJ_MLP, 3, "bias"));
+                } break;
+            case PROJECTOR_TYPE_GLMA:
+                {
+                    model.conv1d_1_w = get_tensor(string_format(TN_CONV1D, 1, "weight"));
+                    model.conv1d_1_b = get_tensor(string_format(TN_CONV1D, 1, "bias"));
+                    model.conv1d_2_w = get_tensor(string_format(TN_CONV1D, 2, "weight"));
+                    model.conv1d_2_b = get_tensor(string_format(TN_CONV1D, 2, "bias"));
+                    model.mm_1_w = get_tensor(string_format(TN_MM_AUDIO_MLP, 1, "weight"));
+                    model.mm_1_b = get_tensor(string_format(TN_MM_AUDIO_MLP, 1, "bias"));
+                    model.mm_2_w = get_tensor(string_format(TN_MM_AUDIO_MLP, 2, "weight"));
+                    model.mm_2_b = get_tensor(string_format(TN_MM_AUDIO_MLP, 2, "bias"));
+                    model.mm_norm_pre_w = get_tensor(string_format(TN_MM_NORM_PRE, "weight"));
+                    model.mm_norm_pre_b = get_tensor(string_format(TN_MM_NORM_PRE, "bias"));
+                    model.mm_boi = get_tensor(string_format(TN_TOK_BOI, "weight"));
+                    model.mm_eoi = get_tensor(string_format(TN_TOK_EOI, "weight"));
                 } break;
             case PROJECTOR_TYPE_LLAMA4:
                 {
@@ -4606,6 +4634,16 @@ int clip_n_output_tokens(const struct clip_ctx * ctx, struct clip_image_f32 * im
                     n_patches /= 2;
                 }
             } break;
+        case PROJECTOR_TYPE_GLMA:
+            {
+                n_patches = img->nx;
+                // whisper downscales input token by half after conv1d
+                n_patches /= 2;
+                // reshape by merge_factor
+                n_patches /= 4;
+                // for BOI and EOI token embeddings
+                n_patches += 2;
+            } break;
         case PROJECTOR_TYPE_COGVLM:
             {
                 n_patches += 2; // for BOI and EOI token embeddings
@@ -4941,6 +4979,7 @@ bool clip_image_batch_encode(clip_ctx * ctx, const int n_threads, const clip_ima
         case PROJECTOR_TYPE_IDEFICS3:
         case PROJECTOR_TYPE_INTERNVL:
         case PROJECTOR_TYPE_QWEN2A:
+        case PROJECTOR_TYPE_GLMA:
         case PROJECTOR_TYPE_ULTRAVOX:
         case PROJECTOR_TYPE_LFM2:
         case PROJECTOR_TYPE_VOXTRAL:
@@ -5051,6 +5090,8 @@ int clip_n_mmproj_embd(const struct clip_ctx * ctx) {
             return ctx->model.mm_model_proj->ne[1];
         case PROJECTOR_TYPE_QWEN2A:
             return ctx->model.mm_fc_w->ne[1];
+        case PROJECTOR_TYPE_GLMA:
+            return ctx->model.mm_2_w->ne[1];
         case PROJECTOR_TYPE_LFM2:
         case PROJECTOR_TYPE_KIMIVL:
             return ctx->model.mm_2_w->ne[1];
@@ -5097,6 +5138,7 @@ bool clip_has_audio_encoder(const struct clip_ctx * ctx) {
 bool clip_has_whisper_encoder(const struct clip_ctx * ctx) {
     return ctx->proj_type() == PROJECTOR_TYPE_ULTRAVOX
         || ctx->proj_type() == PROJECTOR_TYPE_QWEN2A
+        || ctx->proj_type() == PROJECTOR_TYPE_GLMA
         || ctx->proj_type() == PROJECTOR_TYPE_VOXTRAL;
 }
 
