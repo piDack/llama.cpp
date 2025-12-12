@@ -1848,15 +1848,7 @@ struct clip_graph {
         if (model.audio_has_stack_frames()) {
             // StackAudioFrames
             // https://huggingface.co/fixie-ai/ultravox-v0_5-llama-3_2-1b/blob/main/ultravox_model.py
-            int64_t stride = n_embd * hparams.proj_stack_factor;
-            int64_t padded_len = GGML_PAD(ggml_nelements(cur), stride);
-            int64_t pad = padded_len - ggml_nelements(cur);
-            if (pad > 0) {
-                cur = ggml_view_1d(ctx0, cur, ggml_nelements(cur), 0);
-                cur = ggml_pad(ctx0, cur, pad, 0, 0, 0);
-            }
-            cur = ggml_view_2d(ctx0, cur, stride, padded_len / stride,
-                                ggml_row_size(cur->type, stride), 0);
+            cur = build_stack(cur, hparams.proj_stack_factor, n_embd);
             cb(cur, "after_stacked", -1);
         }
 
@@ -1895,12 +1887,8 @@ struct clip_graph {
             cur = ggml_norm(ctx0, cur, hparams.eps);
             cur = ggml_mul(ctx0, cur, model.mm_norm_pre_w);
             cur = ggml_add(ctx0, cur, model.mm_norm_pre_b);
-            cur = ggml_reshape_2d(ctx0, cur, cur->ne[0] * 4, cur->ne[1] / 4);
-            cur = ggml_mul_mat(ctx0, model.mm_1_w, cur);
-            cur = ggml_add(ctx0, cur, model.mm_1_b);
-            cur = ggml_gelu_erf(ctx0, cur);
-            cur = ggml_mul_mat(ctx0, model.mm_2_w, cur);
-            cur = ggml_add(ctx0, cur, model.mm_2_b);
+            cur = build_stack(cur, hparams.proj_stack_factor, n_embd);
+            cur = build_ffn(cur, model.mm_1_w, model.mm_1_b, nullptr, nullptr, model.mm_2_w, model.mm_2_b, hparams.ffn_op, 0);
             cur = ggml_concat(ctx0, model.mm_boi, cur, 1);
             cur = ggml_concat(ctx0, cur, model.mm_eoi, 1);
         } else {
@@ -2486,6 +2474,32 @@ private:
         return cur;
     }
 
+    // Generic function to stack frames for audio processing
+    // Abstracts out the StackAudioFrames logic used by ultravox
+    ggml_tensor * build_stack(ggml_tensor * cur, int32_t stack_factor, int32_t n_embed) {
+        if (stack_factor <= 1) {
+            return cur;
+        }
+
+        int64_t total_elements = ggml_nelements(cur);
+        int64_t stride = n_embed * stack_factor;
+
+        // Calculate padded length
+        int64_t padded_len = GGML_PAD(total_elements, stride);
+        int64_t pad = padded_len - total_elements;
+
+        if (pad > 0) {
+            // Pad the tensor to make it divisible by stride
+            cur = ggml_view_1d(ctx0, cur, total_elements, 0);
+            cur = ggml_pad(ctx0, cur, pad, 0, 0, 0);
+        }
+
+        // Reshape to [stride, padded_len / stride]
+        cur = ggml_view_2d(ctx0, cur, stride, padded_len / stride,
+                            ggml_row_size(cur->type, stride), 0);
+        return cur;
+    }
+
 };
 
 static ggml_cgraph * clip_image_build_graph(clip_ctx * ctx, const clip_image_f32_batch & imgs) {
@@ -2864,10 +2878,12 @@ struct clip_model_loader {
                     } break;
                 case PROJECTOR_TYPE_ULTRAVOX:
                 case PROJECTOR_TYPE_QWEN2A:
+                case PROJECTOR_TYPE_GLMA:
                 case PROJECTOR_TYPE_VOXTRAL:
                     {
                         bool require_stack = model.proj_type == PROJECTOR_TYPE_ULTRAVOX ||
-                                             model.proj_type == PROJECTOR_TYPE_VOXTRAL;
+                                             model.proj_type == PROJECTOR_TYPE_VOXTRAL ||
+                                             model.proj_type == PROJECTOR_TYPE_GLMA;
                         get_u32(KEY_A_PROJ_STACK_FACTOR, hparams.proj_stack_factor, require_stack);
                         if (hparams.n_mel_bins != 128) {
                             throw std::runtime_error(string_format("%s: only 128 mel bins are supported for ultravox\n", __func__));
@@ -4640,7 +4656,7 @@ int clip_n_output_tokens(const struct clip_ctx * ctx, struct clip_image_f32 * im
                 // whisper downscales input token by half after conv1d
                 n_patches /= 2;
                 // reshape by merge_factor
-                n_patches /= 4;
+                n_patches /= ctx->model.hparams.proj_stack_factor;
                 // for BOI and EOI token embeddings
                 n_patches += 2;
             } break;

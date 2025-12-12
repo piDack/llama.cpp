@@ -2359,7 +2359,6 @@ class StableLMModel(TextModel):
     "VLlama3ForCausalLM",
     "LlavaForConditionalGeneration",
     "VoxtralForConditionalGeneration",
-    "GlmasrModel",
     "LlamaModel")
 class LlamaModel(TextModel):
     model_arch = gguf.MODEL_ARCH.LLAMA
@@ -2411,16 +2410,6 @@ class LlamaModel(TextModel):
         # Apply to granite small models only
         if self.hparams.get("vocab_size", 32000) == 49152:
             self.gguf_writer.add_add_bos_token(False)
-        if isinstance(self.hparams.get("eos_token_id"), list):
-            from transformers import AutoTokenizer
-            tokenizer = AutoTokenizer.from_pretrained(self.dir_model, trust_remote_code=True)
-            special_vocab = gguf.SpecialVocab(self.dir_model, load_merges=True)
-            special_vocab._set_special_token("eos", tokenizer.get_added_vocab()["<|endoftext|>"])
-            special_vocab._set_special_token("eot", tokenizer.get_added_vocab()["<|user|>"])
-            special_vocab._set_special_token("unk", tokenizer.get_added_vocab()["<|endoftext|>"])
-            special_vocab._set_special_token("bos", tokenizer.get_added_vocab()["<|endoftext|>"])
-            special_vocab.add_to_gguf(self.gguf_writer)
-            special_vocab.chat_template = "glmedge"
 
     def set_gguf_parameters(self):
         super().set_gguf_parameters()
@@ -2573,6 +2562,22 @@ class ArceeModel(LlamaModel):
             self.gguf_writer.add_rope_scaling_type(gguf.RopeScalingType.YARN)
             self.gguf_writer.add_rope_scaling_factor(rope_scaling["factor"])
             self.gguf_writer.add_rope_scaling_orig_ctx_len(rope_scaling["original_max_position_embeddings"])
+
+
+@ModelBase.register("GlmasrModel")
+class GlmasrModel(LlamaModel):
+    model_arch = gguf.MODEL_ARCH.LLAMA
+
+    def set_vocab(self):
+        super().set_vocab()
+        from transformers import AutoTokenizer
+        tokenizer = AutoTokenizer.from_pretrained(self.dir_model, trust_remote_code=True)
+        special_vocab = gguf.SpecialVocab(self.dir_model, load_merges=True)
+        special_vocab._set_special_token("eos", tokenizer.get_added_vocab()["<|endoftext|>"])
+        special_vocab._set_special_token("eot", tokenizer.get_added_vocab()["<|user|>"])
+        special_vocab._set_special_token("unk", tokenizer.get_added_vocab()["<|endoftext|>"])
+        special_vocab._set_special_token("bos", tokenizer.get_added_vocab()["<|endoftext|>"])
+        special_vocab.add_to_gguf(self.gguf_writer)
 
 
 @ModelBase.register("AfmoeForCausalLM")
@@ -9031,6 +9036,7 @@ class GlmASRWhisperEncoderModel(MmprojModel):
         self.gguf_writer.add_clip_projector_type(gguf.VisionProjectorType.GLMA)
         self.gguf_writer.add_audio_num_mel_bins(self.hparams["num_mel_bins"])
         self.gguf_writer.add_audio_attention_layernorm_eps(self.hparams.get("layer_norm_eps", 1e-5))
+        self.gguf_writer.add_audio_stack_factor(self.global_config["merge_factor"])
 
     def tensor_force_quant(self, name, new_name, bid, n_dims):
         if ".conv" in name and ".weight" in name:
