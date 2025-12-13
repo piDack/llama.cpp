@@ -720,6 +720,32 @@ ggml_tensor * clip_graph::build_rope_2d(
     return cur;
 }
 
+// Generic function to stack frames for audio processing
+// Abstracts out the StackAudioFrames logic used by ultravox
+ggml_tensor * clip_graph::build_stack(ggml_tensor * cur, int32_t stack_factor, int32_t n_embed) {
+    if (stack_factor <= 1) {
+        return cur;
+    }
+
+    int64_t total_elements = ggml_nelements(cur);
+    int64_t stride = n_embed * stack_factor;
+
+    // Calculate padded length
+    int64_t padded_len = GGML_PAD(total_elements, stride);
+    int64_t pad = padded_len - total_elements;
+
+    if (pad > 0) {
+        // Pad the tensor to make it divisible by stride
+        cur = ggml_view_1d(ctx0, cur, total_elements, 0);
+        cur = ggml_pad(ctx0, cur, pad, 0, 0, 0);
+    }
+
+    // Reshape to [stride, padded_len / stride]
+    cur = ggml_view_2d(ctx0, cur, stride, padded_len / stride,
+                        ggml_row_size(cur->type, stride), 0);
+    return cur;
+}
+
 // aka pixel_shuffle / pixel_unshuffle / patch_merger (Kimi-VL)
 // support dynamic resolution
 ggml_tensor * clip_graph::build_patch_merge_permute(ggml_tensor * cur, int scale_factor) {
@@ -752,34 +778,6 @@ ggml_tensor * clip_graph::build_patch_merge_permute(ggml_tensor * cur, int scale
 
     return cur;
 }
-
-    // Generic function to stack frames for audio processing
-    // Abstracts out the StackAudioFrames logic used by ultravox
-    ggml_tensor * build_stack(ggml_tensor * cur, int32_t stack_factor, int32_t n_embed) {
-        if (stack_factor <= 1) {
-            return cur;
-        }
-
-        int64_t total_elements = ggml_nelements(cur);
-        int64_t stride = n_embed * stack_factor;
-
-        // Calculate padded length
-        int64_t padded_len = GGML_PAD(total_elements, stride);
-        int64_t pad = padded_len - total_elements;
-
-        if (pad > 0) {
-            // Pad the tensor to make it divisible by stride
-            cur = ggml_view_1d(ctx0, cur, total_elements, 0);
-            cur = ggml_pad(ctx0, cur, pad, 0, 0, 0);
-        }
-
-        // Reshape to [stride, padded_len / stride]
-        cur = ggml_view_2d(ctx0, cur, stride, padded_len / stride,
-                            ggml_row_size(cur->type, stride), 0);
-        return cur;
-    }
-
-};
 
 static ggml_cgraph * clip_image_build_graph(clip_ctx * ctx, const clip_image_f32_batch & imgs) {
     GGML_ASSERT(imgs.entries.size() == 1 && "n_batch > 1 is not supported");
