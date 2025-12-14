@@ -750,10 +750,9 @@ class TextModel(ModelBase):
         else:
             self.hf_arch = ""
 
-        llm_config_key = "lm_config" if "lm_config" in self.hparams else "text_config"
-        if llm_config_key in self.hparams:
+        if "text_config" in self.hparams:
             # move the text_config to the root level
-            self.hparams = {**self.hparams, **self.hparams[llm_config_key]}
+            self.hparams = {**self.hparams, **self.hparams["text_config"]}
 
         self.block_count = self.find_hparam(["n_layers", "num_hidden_layers", "n_layer", "num_layers"])
         self.tensor_map = gguf.get_tensor_name_map(self.model_arch, self.block_count)
@@ -1646,12 +1645,11 @@ class MmprojModel(ModelBase):
 
         # get n_embd of the text model
         if not self.is_mistral_format:
-            llm_config_key = "lm_config" if "lm_config" in self.hparams else "text_config"
-            if llm_config_key not in self.hparams:
+            if "text_config" not in self.hparams:
                 self.hparams["text_config"] = {}
             if "audio_config" not in self.hparams:
                 self.hparams["audio_config"] = {}
-            text_config = {**self.hparams, **self.hparams[llm_config_key]}
+            text_config = {**self.hparams, **self.hparams["text_config"]}
             self.n_embd_text = text_config.get("hidden_size", text_config.get("n_embd", 0))
         else:
             text_config = {
