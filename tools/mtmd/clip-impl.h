@@ -184,7 +184,7 @@ static std::map<projector_type, std::string> PROJECTOR_TYPE_NAMES = {
     { PROJECTOR_TYPE_INTERNVL,  "internvl"},
     { PROJECTOR_TYPE_LLAMA4,    "llama4"},
     { PROJECTOR_TYPE_QWEN2A,    "qwen2a"},
-    { PROJECTOR_TYPE_GLMA,     "glma"},
+    { PROJECTOR_TYPE_GLMA,      "glma"},
     { PROJECTOR_TYPE_QWEN25O,   "qwen2.5o"},
     { PROJECTOR_TYPE_VOXTRAL,   "voxtral"},
     { PROJECTOR_TYPE_LFM2,      "lfm2"},

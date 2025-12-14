@@ -705,6 +705,9 @@ class ModelBase:
         if "llm_config" in config:
             # rename for InternVL
             config["text_config"] = config["llm_config"]
+        if "lm_config" in config:
+            # rename for GlmASR
+            config["text_config"] = config["lm_config"]
         if "thinker_config" in config:
             # rename for Qwen2.5-Omni
             config["text_config"] = config["thinker_config"]["text_config"]
@@ -2380,7 +2383,6 @@ class StableLMModel(TextModel):
     "VLlama3ForCausalLM",
     "LlavaForConditionalGeneration",
     "VoxtralForConditionalGeneration",
-    "GlmasrModel",
     "LlamaModel")
 class LlamaModel(TextModel):
     model_arch = gguf.MODEL_ARCH.LLAMA
@@ -2391,6 +2393,8 @@ class LlamaModel(TextModel):
         # fix for SmolVLM2, missing `num_attention_heads` in config.json
         if self.hf_arch == "VLlama3ForCausalLM":
             self.hparams["num_attention_heads"] = self.hparams.get("num_attention_heads", 32)
+        hparams = ModelBase.load_hparams(self.dir_model, is_mistral_format=False) 
+        self.origin_hf_arch = hparams.get('architectures', [None])[0]
 
     def set_vocab(self):
         if self.is_mistral_format:
@@ -2432,7 +2436,7 @@ class LlamaModel(TextModel):
         # Apply to granite small models only
         if self.hparams.get("vocab_size", 32000) == 49152:
             self.gguf_writer.add_add_bos_token(False)
-        if self.hf_arch == "GlmasrModel":
+        if self.origin_hf_arch == "GlmasrModel":
             self._set_vocab_glmedge()
 
     def set_gguf_parameters(self):
