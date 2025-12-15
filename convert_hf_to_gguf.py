@@ -1491,8 +1491,13 @@ class TextModel(ModelBase):
 
     def _set_vocab_glmedge(self):
         from transformers import AutoTokenizer
-        tokenizer = AutoTokenizer.from_pretrained(self.dir_model, trust_remote_code=True)
+        tokenizer = AutoTokenizer.from_pretrained(self.dir_model)
         special_vocab = gguf.SpecialVocab(self.dir_model, load_merges=True)
+        tokens, toktypes, tokpre = self.get_vocab_base()
+        self.gguf_writer.add_tokenizer_model("gpt2")
+        self.gguf_writer.add_tokenizer_pre(tokpre)
+        self.gguf_writer.add_token_list(tokens)
+        self.gguf_writer.add_token_types(toktypes)
         special_vocab._set_special_token("eos", tokenizer.get_added_vocab()["<|endoftext|>"])
         special_vocab._set_special_token("eot", tokenizer.get_added_vocab()["<|user|>"])
         special_vocab._set_special_token("unk", tokenizer.get_added_vocab()["<|endoftext|>"])
@@ -2395,6 +2400,9 @@ class LlamaModel(TextModel):
         self.origin_hf_arch = hparams.get('architectures', [None])[0]
 
     def set_vocab(self):
+        if self.origin_hf_arch == "GlmasrModel":
+            return self._set_vocab_glmedge()
+
         if self.is_mistral_format:
             return self._set_vocab_mistral()
 
@@ -2434,8 +2442,6 @@ class LlamaModel(TextModel):
         # Apply to granite small models only
         if self.hparams.get("vocab_size", 32000) == 49152:
             self.gguf_writer.add_add_bos_token(False)
-        if self.origin_hf_arch == "GlmasrModel":
-            self._set_vocab_glmedge()
 
     def set_gguf_parameters(self):
         super().set_gguf_parameters()
